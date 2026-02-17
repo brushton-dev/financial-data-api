@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Financial Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .cards { display:flex; gap:12px; flex-wrap:wrap; margin: 12px 0 20px; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:12px 14px; min-width:220px; }
+    .muted { color:#666; font-size:14px; }
+    table { border-collapse: collapse; width:100%; margin-top: 10px; }
+    th, td { border:1px solid #ddd; padding:8px; text-align:left; }
+    th { background:#f6f6f6; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin: 10px 0; }
+    input, button { padding:8px 10px; border-radius:10px; border:1px solid #ccc; }
+    button { cursor:pointer; }
+    .error { color:#b00020; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Financial Dashboard</h1>
+  <div class="muted">Calls your FastAPI backend and displays real results.</div>
+
+  <div class="cards">
+    <div class="card"><div class="muted">Total Spent</div><div id="totalSpent">—</div></div>
+    <div class="card"><div class="muted">Avg Transaction</div><div id="avgTx">—</div></div>
+    <div class="card"><div class="muted">Transaction Count</div><div id="txCount">—</div></div>
+  </div>
+
+  <div class="row">
+    <input id="categoryInput" placeholder="Filter category (e.g., groceries)" />
+    <button id="filterBtn">Filter</button>
+    <button id="resetBtn">Reset</button>
+    <span id="status" class="muted"></span>
+  </div>
+
+  <div id="error" class="error"></div>
+
+  <h2>Add Transaction</h2>
+<div class="row">
+  <input type="date" id="dateInput" />
+  <input type="text" id="categoryAddInput" placeholder="Category" />
+  <input type="number" step="0.01" id="amountInput" placeholder="Amount" />
+  <button id="addBtn">Add Transaction</button>
+</div>
+
+  <h2>Transactions</h2>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Date</th><th>Category</th><th>Amount</th></tr>
+    </thead>
+    <tbody id="txBody"></tbody>
+  </table>
+
+  <script>
+    const API = "http://127.0.0.1:8000";
+    const $ = (id) => document.getElementById(id);
+
+    const money = (n) =>
+      new Intl.NumberFormat(undefined, { style: "currency", currency: "CAD" }).format(n);
+
+    function renderTransactions(rows) {
+      const body = $("txBody");
+      body.innerHTML = "";
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${r.id}</td><td>${r.date}</td><td>${r.category}</td><td>${money(r.amount)}</td>`;
+        body.appendChild(tr);
+      }
+      $("status").textContent = `Showing ${rows.length} transaction(s)`;
+    }
+
+    async function loadSummary() {
+      const res = await fetch(`${API}/summary`);
+      const data = await res.json();
+      $("totalSpent").textContent = money(data.total_spent);
+      $("avgTx").textContent = money(data.average_transaction);
+      $("txCount").textContent = data.transaction_count;
+    }
+
+    async function loadTransactions(url = `${API}/transactions`) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+      renderTransactions(data);
+    }
+
+    async function init() {
+      $("error").textContent = "";
+      try {
+        await Promise.all([loadSummary(), loadTransactions()]);
+      } catch (e) {
+        $("error").textContent = `Could not load data. Is the API running? (${e.message})`;
+      }
+    }
+
+    $("filterBtn").addEventListener("click", async () => {
+      const cat = $("categoryInput").value.trim();
+      if (!cat) return;
+      $("error").textContent = "";
+      try {
+        await loadTransactions(`${API}/transactions/category/${encodeURIComponent(cat)}`);
+      } catch (e) {
+        $("error").textContent = `Filter failed: ${e.message}`;
+      }
+    });
+
+    $("resetBtn").addEventListener("click", async () => {
+      $("categoryInput").value = "";
+      await init();
+    });
+$("addBtn").addEventListener("click", async () => {
+  const date = $("dateInput").value;
+  const category = $("categoryAddInput").value.trim();
+  const amount = parseFloat($("amountInput").value);
+
+  if (!date || !category || !amount) {
+    alert("Please fill all fields");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/transactions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        date: date,
+        category: category,
+        amount: amount
+      })
+    });
+
+    if (!res.ok) throw new Error("Failed to add transaction");
+
+    // Clear inputs
+    $("dateInput").value = "";
+    $("categoryAddInput").value = "";
+    $("amountInput").value = "";
+
+    // Refresh dashboard data
+    await init();
+
+  } catch (err) {
+    alert("Error adding transaction");
+    console.error(err);
+  }
+});
+
+    init();
+  </script>
+</body>
+</html>
